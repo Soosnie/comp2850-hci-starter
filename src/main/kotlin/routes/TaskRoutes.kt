@@ -19,19 +19,19 @@ import java.io.StringWriter
  */
 
 // Week 7+ imports (inline edit, toggle completion):
-// import model.Task               // When Task becomes separate model class
-// import model.ValidationResult   // For validation errors
-// import renderTemplate            // Extension function from Main.kt
-// import isHtmxRequest             // Extension function from Main.kt
+//import model.Task               // When Task becomes separate model class
+//import model.ValidationResult   // For validation errors
+import renderTemplate            // Extension function from Main.kt
+import isHtmxRequest             // Extension function from Main.kt
 
 // Week 8+ imports (pagination, search, URL encoding):
-// import io.ktor.http.encodeURLParameter  // For query parameter encoding
-// import utils.Page                       // Pagination helper class
+import io.ktor.http.encodeURLParameter  // For query parameter encoding
+//import utils.Page                       // Pagination helper class
 
 // Week 9+ imports (metrics logging, instrumentation):
-// import utils.jsMode              // Detect JS mode (htmx/nojs)
-// import utils.logValidationError  // Log validation failures
-// import utils.timed               // Measure request timing
+//import utils.jsMode              // Detect JS mode (htmx/nojs)
+//import utils.logValidationError  // Log validation failures
+//import utils.timed               // Measure request timing
 
 // Note: Solution repo uses storage.TaskStore instead of data.TaskRepository
 // You may refactor to this in Week 10 for production readiness
@@ -64,17 +64,36 @@ fun Route.taskRoutes() {
      * GET /tasks - List all tasks
      * Returns full page (no HTMX differentiation in Week 6)
      */
-    get("/tasks") {
-        val model =
-            mapOf(
-                "title" to "Tasks",
-                "tasks" to TaskRepository.all(),
-            )
-        val template = pebble.getTemplate("tasks/index.peb")
-        val writer = StringWriter()
-        template.evaluate(writer, model)
-        call.respondText(writer.toString(), ContentType.Text.Html)
+    // Fragment endpoint for HTMX updates
+    // Fragment endpoint for HTMX updates
+    get("/tasks/fragment") {
+        val q = call.request.queryParameters["q"]?.trim().orEmpty()
+        val page = call.request.queryParameters["page"]?.toIntOrNull() ?: 1
+        val pageData = TaskRepository.search(q, page, 10)
+
+        val list = call.renderTemplate("tasks/_list.peb", mapOf("page" to pageData, "q" to q))
+        val pager = call.renderTemplate("tasks/_pager.peb", mapOf("page" to pageData, "q" to q))
+        val status = """<div id="status" hx-swap-oob="true">Updated: showing ${pageData.items.size} of ${pageData.total} tasks</div>"""
+
+        call.respondText(list + pager + status, ContentType.Text.Html)
     }
+
+    // Update existing GET /tasks to use pagination
+    get("/tasks") {
+        val q = call.request.queryParameters["q"]?.trim().orEmpty()
+        val page = call.request.queryParameters["page"]?.toIntOrNull() ?: 1
+        val pageData = TaskRepository.search(q, page, 10)
+
+        val html = call.renderTemplate("tasks/index.peb", mapOf(
+            "page" to pageData,
+            "q" to q,
+            "title" to "Tasks"
+        ))
+        call.respondText(html, ContentType.Text.Html)
+    }
+
+
+
 
     /**
      * POST /tasks - Add new task

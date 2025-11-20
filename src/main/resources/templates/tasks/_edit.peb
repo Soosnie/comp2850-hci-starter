@@ -1,33 +1,33 @@
+{# Edit mode partial - shown when person clicks "Edit" #}
+{# WCAG 3.3.2: Provide labels for all form inputs #}
+
 <li id="task-{{ task.id }}" class="task-edit">
   <form action="/tasks/{{ task.id }}/edit" method="post"
         hx-post="/tasks/{{ task.id }}/edit"
         hx-target="#task-{{ task.id }}"
         hx-swap="outerHTML">
 
-    <label for="title-{{ task.id }}">Title</label>
+    <label for="title-{{ task.id }}" class="visually-hidden">Edit task title</label>
     <input type="text"
            id="title-{{ task.id }}"
            name="title"
            value="{{ task.title }}"
            required
-           autofocus
-           aria-describedby="hint-{{ task.id }}{% if error %} error-{{ task.id }}{% endif %}">
+           aria-describedby="hint-{{ task.id }}"
+           autofocus>
+    <small id="hint-{{ task.id }}">Press Enter to save, Esc to cancel.</small>
 
-    <small id="hint-{{ task.id }}">Keep it short and specific.</small>
+    {# Save button #}
+    <button type="submit" aria-label="Save changes to: {{ task.title }}">Save</button>
 
-    {% if error %}
-      <p id="error-{{ task.id }}" class="error" role="alert" aria-live="assertive">
-        {{ error }}
-      </p>
-    {% else %}
-      <p id="error-{{ task.id }}" class="visually-hidden" aria-live="assertive"></p>
-    {% endif %}
-
-    <button type="submit">Save</button>
+    {# Cancel button (dual-mode) #}
     <a href="/tasks"
        hx-get="/tasks/{{ task.id }}/view"
        hx-target="#task-{{ task.id }}"
        hx-swap="outerHTML"
-       role="button">Cancel</a>
+       role="button"
+       aria-label="Cancel editing: {{ task.title }}">
+      Cancel
+    </a>
   </form>
 </li>
