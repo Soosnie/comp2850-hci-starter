@@ -26,7 +26,7 @@ import isHtmxRequest             // Extension function from Main.kt
 
 // Week 8+ imports (pagination, search, URL encoding):
 import io.ktor.http.encodeURLParameter  // For query parameter encoding
-//import utils.Page                       // Pagination helper class
+import data.Page                       // Pagination helper class
 
 // Week 9+ imports (metrics logging, instrumentation):
 //import utils.jsMode              // Detect JS mode (htmx/nojs)
@@ -66,6 +66,7 @@ fun Route.taskRoutes() {
      */
     // Fragment endpoint for HTMX updates
     // Fragment endpoint for HTMX updates
+    // Fragment endpoint for HTMX updates
     get("/tasks/fragment") {
         val q = call.request.queryParameters["q"]?.trim().orEmpty()
         val page = call.request.queryParameters["page"]?.toIntOrNull() ?: 1
@@ -95,6 +96,8 @@ fun Route.taskRoutes() {
 
 
 
+
+
     /**
      * POST /tasks - Add new task
      * Dual-mode: HTMX fragment or PRG redirect
@@ -119,27 +122,17 @@ fun Route.taskRoutes() {
         val task = TaskRepository.add(title)
 
         if (call.isHtmx()) {
-            // Return HTML fragment for new task
-            val fragment = """<li id="task-${task.id}">
-                <span>${task.title}</span>
-            <form action="/tasks/${task.id}/edit" method="get" style="display: inline;"
-                    hx-get="/tasks/${task.id}/edit"
-                    hx-target="#task-${task.id}"
-                    hx-swap="outerHTML">
-                <button type="submit" aria-label="Edit task: ${task.title}">Edit</button>
-            </form>
+                // Return refreshed list and pager fragments (same as /tasks/fragment)
+                val q = "" // Optionally preserve filter if needed
+                val page = 1 // Always show first page after add
+                val pageSize = 10 // Or use query param if you want to preserve
+                val pageData = TaskRepository.search(q, page, pageSize)
 
-            <form action="/tasks/${task.id}/delete" method="post" style="display: inline;"
-                    hx-post="/tasks/${task.id}/delete"
-                    hx-target="#task-${task.id}"
-                    hx-swap="outerHTML">
-                <button type="submit" aria-label="Delete task: ${task.title}">Delete</button>
-            </form>
-            </li>"""
+                val list = call.renderTemplate("tasks/_list.peb", mapOf("page" to pageData, "q" to q))
+                val pager = call.renderTemplate("tasks/_pager.peb", mapOf("page" to pageData, "q" to q))
+                val status = """<div id="status" hx-swap-oob="true">Task "${task.title}" added successfully.</div>"""
 
-            val status = """<div id="status" hx-swap-oob="true">Task "${task.title}" added successfully.</div>"""
-
-            return@post call.respondText(fragment + status, ContentType.Text.Html, HttpStatusCode.Created)
+                return@post call.respondText(list + pager + status, ContentType.Text.Html, HttpStatusCode.Created)
         }
 
         // No-JS: POST-Redirect-GET pattern (303 See Other)
