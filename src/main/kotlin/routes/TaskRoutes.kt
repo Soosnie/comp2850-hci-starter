@@ -29,9 +29,7 @@ import io.ktor.http.encodeURLParameter  // For query parameter encoding
 import data.Page                       // Pagination helper class
 
 // Week 9+ imports (metrics logging, instrumentation):
-//import utils.jsMode              // Detect JS mode (htmx/nojs)
-//import utils.logValidationError  // Log validation failures
-//import utils.timed               // Measure request timing
+import utils.*                        // Logging/timing helpers (Logger, timed, jsMode, newReqId, RequestIdKey)
 
 // Note: Solution repo uses storage.TaskStore instead of data.TaskRepository
 // You may refactor to this in Week 10 for production readiness
@@ -83,14 +81,32 @@ fun Route.taskRoutes() {
     get("/tasks") {
         val q = call.request.queryParameters["q"]?.trim().orEmpty()
         val page = call.request.queryParameters["page"]?.toIntOrNull() ?: 1
-        val pageData = TaskRepository.search(q, page, 10)
 
-        val html = call.renderTemplate("tasks/index.peb", mapOf(
-            "page" to pageData,
-            "q" to q,
-            "title" to "Tasks"
-        ))
-        call.respondText(html, ContentType.Text.Html)
+        // If a filter q is present, instrument this request as T1_filter
+        if (q.isNotBlank()) {
+            val reqId = newReqId()
+            call.attributes.put(RequestIdKey, reqId)
+            val session = call.request.cookies["sid"] ?: "anon"
+            val js = call.jsMode()
+
+            call.timed(taskCode = "T1_filter", jsMode = js) {
+                val pageData = TaskRepository.search(q, page, 10)
+                val html = renderTemplate("tasks/index.peb", mapOf(
+                    "page" to pageData,
+                    "q" to q,
+                    "title" to "Tasks"
+                ))
+                respondText(html, ContentType.Text.Html)
+            }
+        } else {
+            val pageData = TaskRepository.search(q, page, 10)
+            val html = call.renderTemplate("tasks/index.peb", mapOf(
+                "page" to pageData,
+                "q" to q,
+                "title" to "Tasks"
+            ))
+            call.respondText(html, ContentType.Text.Html)
+        }
     }
 
 
@@ -103,41 +119,56 @@ fun Route.taskRoutes() {
      * Dual-mode: HTMX fragment or PRG redirect
      */
     post("/tasks") {
-        val title = call.receiveParameters()["title"].orEmpty().trim()
+        // Instrumented add-task handler: assign a request id, log timings and validation failures
+        val reqId = newReqId()
+        call.attributes.put(RequestIdKey, reqId)
 
-        if (title.isBlank()) {
-            // Validation error handling
-            if (call.isHtmx()) {
-                val error = """<div id="status" hx-swap-oob="true" role="alert" aria-live="assertive">
-                    Title is required. Please enter at least one character.
-                </div>"""
-                return@post call.respondText(error, ContentType.Text.Html, HttpStatusCode.BadRequest)
-            } else {
-                // No-JS: redirect back (could add error query param)
-                call.response.headers.append("Location", "/tasks")
-                return@post call.respond(HttpStatusCode.SeeOther)
+        val session = call.request.cookies["sid"] ?: "anon"
+        val jsMode = call.jsMode()
+
+        call.timed(taskCode = "T3_add", jsMode = jsMode) {
+            val title = receiveParameters()["title"].orEmpty().trim()
+
+            // Validation
+            if (title.isBlank()) {
+                Logger.validationError(session, reqId, "T3_add", "blank_title", jsMode)
+                if (isHtmx()) {
+                    val status = """<div id=\"status\" hx-swap-oob=\"true\">Title is required.</div>"""
+                    return@timed respondText(status, ContentType.Text.Html, HttpStatusCode.BadRequest)
+                } else {
+                    return@timed respondRedirect("/tasks?error=title")
+                }
             }
-        }
 
-        val task = TaskRepository.add(title)
+            if (title.length > 200) {
+                Logger.validationError(session, reqId, "T3_add", "max_length", jsMode)
+                if (isHtmx()) {
+                    val status = """<div id=\"status\" hx-swap-oob=\"true\">Title too long (max 200 chars).</div>"""
+                    return@timed respondText(status, ContentType.Text.Html, HttpStatusCode.BadRequest)
+                } else {
+                    return@timed respondRedirect("/tasks?error=title&msg=too_long")
+                }
+            }
 
-        if (call.isHtmx()) {
-                // Return refreshed list and pager fragments (same as /tasks/fragment)
-                val q = "" // Optionally preserve filter if needed
-                val page = 1 // Always show first page after add
-                val pageSize = 10 // Or use query param if you want to preserve
+            // Success path: add task and return refreshed fragments for HTMX, PRG for no-JS
+            val task = TaskRepository.add(title)
+
+            if (isHtmx()) {
+                val q = "" // preserve filter if you want: request.queryParameters["q"]?.trim().orEmpty()
+                val page = 1
+                val pageSize = request.queryParameters["pageSize"]?.toIntOrNull()?.coerceIn(1, 100) ?: 10
                 val pageData = TaskRepository.search(q, page, pageSize)
 
-                val list = call.renderTemplate("tasks/_list.peb", mapOf("page" to pageData, "q" to q))
-                val pager = call.renderTemplate("tasks/_pager.peb", mapOf("page" to pageData, "q" to q))
-                val status = """<div id="status" hx-swap-oob="true">Task "${task.title}" added successfully.</div>"""
+                val list = renderTemplate("tasks/_list.peb", mapOf("page" to pageData, "q" to q))
+                val pager = renderTemplate("tasks/_pager.peb", mapOf("page" to pageData, "q" to q))
+                val status = """<div id=\"status\" hx-swap-oob=\"true\">Added \"${task.title}\".</div>"""
 
-                return@post call.respondText(list + pager + status, ContentType.Text.Html, HttpStatusCode.Created)
+                return@timed respondText(list + pager + status, ContentType.Text.Html, HttpStatusCode.Created)
+            }
+
+            // No-JS: PRG
+            respondRedirect("/tasks")
         }
-
-        // No-JS: POST-Redirect-GET pattern (303 See Other)
-        call.response.headers.append("Location", "/tasks")
-        call.respond(HttpStatusCode.SeeOther)
     }
 
     /**
@@ -145,19 +176,28 @@ fun Route.taskRoutes() {
      * Dual-mode: HTMX empty response or PRG redirect
      */
     post("/tasks/{id}/delete") {
-        val id = call.parameters["id"]?.toIntOrNull()
-        val removed = id?.let { TaskRepository.delete(it) } ?: false
+        // Instrument delete as T4_delete
+        val reqId = newReqId()
+        call.attributes.put(RequestIdKey, reqId)
+        val session = call.request.cookies["sid"] ?: "anon"
+        val js = call.jsMode()
 
-        if (call.isHtmx()) {
-            val message = if (removed) "Task deleted." else "Could not delete task."
-            val status = """<div id="status" hx-swap-oob="true">$message</div>"""
-            // Return empty content to trigger outerHTML swap (removes the <li>)
-            return@post call.respondText(status, ContentType.Text.Html)
+        call.timed(taskCode = "T4_delete", jsMode = js) {
+            val id = call.parameters["id"]?.toIntOrNull()
+            val removed = id?.let { TaskRepository.delete(it) } ?: false
+
+            if (isHtmx()) {
+                val message = if (removed) "Task deleted." else "Could not delete task."
+                if (!removed) {
+                    Logger.validationError(session, reqId, "T4_delete", "not_found", js)
+                }
+                val status = """<div id=\"status\" hx-swap-oob=\"true\">$message</div>"""
+                return@timed respondText(status, ContentType.Text.Html)
+            }
+
+            // No-JS: PRG
+            respondRedirect("/tasks")
         }
-
-        // No-JS: POST-Redirect-GET pattern (303 See Other)
-        call.response.headers.append("Location", "/tasks")
-        call.respond(HttpStatusCode.SeeOther)
     }
 
     // TODO: Week 7 Lab 1 Activity 2 Steps 2-5
@@ -198,46 +238,55 @@ fun Route.taskRoutes() {
     }
 
     post("/tasks/{id}/edit") {
-        val id = call.parameters["id"]?.toIntOrNull() ?: return@post call.respond(HttpStatusCode.NotFound)
-        val task = TaskRepository.find(id) ?: return@post call.respond(HttpStatusCode.NotFound)
+        // Instrument inline edit as T2_edit
+        val reqId = newReqId()
+        call.attributes.put(RequestIdKey, reqId)
+        val session = call.request.cookies["sid"] ?: "anon"
+        val js = call.jsMode()
 
-        val newTitle = call.receiveParameters()["title"].orEmpty().trim()
+        call.timed(taskCode = "T2_edit", jsMode = js) {
+            val id = parameters["id"]?.toIntOrNull() ?: return@timed respond(HttpStatusCode.NotFound)
+            val task = TaskRepository.find(id) ?: return@timed respond(HttpStatusCode.NotFound)
 
-        // Validation
-        if (newTitle.isBlank()) {
-            if (call.isHtmx()) {
-                // HTMX path: return edit fragment with error
-                val template = pebble.getTemplate("tasks/_edit.peb")
-                val model = mapOf(
-                    "task" to task,
-                    "error" to "Title is required. Please enter at least one character."
-                )
-                val writer = StringWriter()
-                template.evaluate(writer, model)
-                return@post call.respondText(writer.toString(), ContentType.Text.Html, HttpStatusCode.BadRequest)
-            } else {
-                // No-JS path: redirect with error flag
-                return@post call.respondRedirect("/tasks/${id}/edit?error=blank")
+            val newTitle = receiveParameters()["title"].orEmpty().trim()
+
+            // Validation
+            if (newTitle.isBlank()) {
+                Logger.validationError(session, reqId, "T2_edit", "blank_title", js)
+                if (isHtmx()) {
+                    // HTMX path: return edit fragment with error
+                    val template = pebble.getTemplate("tasks/_edit.peb")
+                    val model = mapOf(
+                        "task" to task,
+                        "error" to "Title is required. Please enter at least one character."
+                    )
+                    val writer = StringWriter()
+                    template.evaluate(writer, model)
+                    return@timed respondText(writer.toString(), ContentType.Text.Html, HttpStatusCode.BadRequest)
+                } else {
+                    // No-JS path: redirect with error flag
+                    return@timed respondRedirect("/tasks/${id}/edit?error=blank")
+                }
             }
+
+            // Update task
+            task.title = newTitle
+            TaskRepository.update(task)
+
+            if (isHtmx()) {
+                // HTMX path: return view fragment + OOB status
+                val viewTemplate = pebble.getTemplate("tasks/_item.peb")
+                val viewWriter = StringWriter()
+                viewTemplate.evaluate(viewWriter, mapOf("task" to task))
+
+                val status = """<div id=\"status\" hx-swap-oob=\"true\">Task "${task.title}" updated successfully.</div>"""
+
+                return@timed respondText(viewWriter.toString() + status, ContentType.Text.Html)
+            }
+
+            // No-JS path: PRG redirect
+            respondRedirect("/tasks")
         }
-
-        // Update task
-        task.title = newTitle
-        TaskRepository.update(task)
-
-        if (call.isHtmx()) {
-            // HTMX path: return view fragment + OOB status
-            val viewTemplate = pebble.getTemplate("tasks/_item.peb")
-            val viewWriter = StringWriter()
-            viewTemplate.evaluate(viewWriter, mapOf("task" to task))
-
-            val status = """<div id="status" hx-swap-oob="true">Task "${task.title}" updated successfully.</div>"""
-
-            return@post call.respondText(viewWriter.toString() + status, ContentType.Text.Html)
-        }
-
-        // No-JS path: PRG redirect
-        call.respondRedirect("/tasks")
     }
 
 
