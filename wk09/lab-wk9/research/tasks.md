@@ -66,7 +66,7 @@
 **Setup**:
 - Empty or partially filled task list
 - Form visible at top of page
-
+    
 **Success criteria**:
 - Participant types exact title (or close match)
 - Submits form

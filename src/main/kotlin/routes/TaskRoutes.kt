@@ -68,13 +68,32 @@ fun Route.taskRoutes() {
     get("/tasks/fragment") {
         val q = call.request.queryParameters["q"]?.trim().orEmpty()
         val page = call.request.queryParameters["page"]?.toIntOrNull() ?: 1
-        val pageData = TaskRepository.search(q, page, 10)
 
-        val list = call.renderTemplate("tasks/_list.peb", mapOf("page" to pageData, "q" to q))
-        val pager = call.renderTemplate("tasks/_pager.peb", mapOf("page" to pageData, "q" to q))
-        val status = """<div id="status" hx-swap-oob="true">Updated: showing ${pageData.items.size} of ${pageData.total} tasks</div>"""
+        // Instrument filter fragments as T1_filter when a query is present
+        if (q.isNotBlank()) {
+            val reqId = newReqId()
+            call.attributes.put(RequestIdKey, reqId)
+            val session = call.request.cookies["sid"] ?: "anon"
+            val js = call.jsMode()
 
-        call.respondText(list + pager + status, ContentType.Text.Html)
+            call.timed(taskCode = "T1_filter", jsMode = js) {
+                val pageData = TaskRepository.search(q, page, 10)
+
+                val list = renderTemplate("tasks/_list.peb", mapOf("page" to pageData, "q" to q))
+                val pager = renderTemplate("tasks/_pager.peb", mapOf("page" to pageData, "q" to q))
+                val status = """<div id=\"status\" hx-swap-oob=\"true\">Updated: showing ${pageData.items.size} of ${pageData.total} tasks</div>"""
+
+                respondText(list + pager + status, ContentType.Text.Html)
+            }
+        } else {
+            val pageData = TaskRepository.search(q, page, 10)
+
+            val list = call.renderTemplate("tasks/_list.peb", mapOf("page" to pageData, "q" to q))
+            val pager = call.renderTemplate("tasks/_pager.peb", mapOf("page" to pageData, "q" to q))
+            val status = """<div id=\"status\" hx-swap-oob=\"true\">Updated: showing ${pageData.items.size} of ${pageData.total} tasks</div>"""
+
+            call.respondText(list + pager + status, ContentType.Text.Html)
+        }
     }
 
     // Update existing GET /tasks to use pagination
