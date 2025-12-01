@@ -30,7 +30,7 @@ Debrief notes:
 
 
 
-First pilot;
+# First pilot;
 
 6.04, 4
 7.12, 5
@@ -43,10 +43,10 @@ Debrief:
 2- adding task
 3- adding task
 
-Second Pilot;
+# Second Pilot;
 
 7.90, 4
-36.88, 4 #Note - participant could not spell supplier
+6.88, 4 
 11.46, 5
 3.84, 5
 
@@ -58,25 +58,32 @@ Debrief:
 2- No
 3- No
 
-Third Pilot;
+# Third Pilot;
 
 6.78, 5
 did not work
 7.34, 5
 1.23, 5
 
+# Fourth Pilot;
+
+6.54, 5
+8.23, 4
+6.87, 5
+2.54, 5
+
 
 Completion rate:
     - T1: 100%
-    - T2: 66.66%
+    - T2: 75%
     - T3: 100%
     - T4: 100%
 
 Median Times:
-    - T1: [15,9,17] ms   [6.04,7.90,6.78] s
-    - T2: [12,12,?] ms   [7.12,36.88,?] s
-    - T3: [20,18,3] ms   [6.85,11.46,7.34] s
-    - T4: [3,4,15] ms    [1.04,3.84,1.23] s
+    - T1: [15,9,17,10] ms   [6.04,7.90,6.78,6.54] s
+    - T2: [12,12,?,15] ms   [7.12,6.88,?,8.23] s
+    - T3: [20,18,3,18] ms   [6.85,11.46,7.34,6.87] s
+    - T4: [3,4,15,3] ms    [1.04,3.84,1.23,2.54] s
 
 Error Rate:
     -0%
@@ -86,23 +93,18 @@ Error Rate:
 ## Completion Rates
 | Task | Completion | Notes |
 |------|-----------|-------|
-| T1 (Filter) | 3/3 (100%) | All participants successful |
-| T2 (Edit) | 2/3 (66.66%) | The edit button did not work for P3 |
-| T3 (Add) | 3/3 (100%) | All participants successful |
-| T4 (Delete) | 3/3 (100%) | No issues |
+| T1 (Filter) | 4/4 (100%) | All participants successful |
+| T2 (Edit) | 3/4 (75%) | The edit button did not work for P3 |
+| T3 (Add) | 4/4 (100%) | All participants successful |
+| T4 (Delete) | 4/4 (100%) | No issues |
 
 ## Median Times (success only)
 | Task | Median (ms) | Median (s) | Range |
 |------|------------|------------|-------|
-| T1 | 15 | 6.78s | 6.04s–7.90s |
-| T2 | 12 | 20s | 7.12s–36.88s |
-| T3 | 18 | 14s | 6.85s–11.46s |
-| T4 | 4 | 8s | 1.04s–3.84s |
+| T1 | 12.5 | 6.66 | 6.04 – 7.90  |
+| T2 | 12   | 7.12 | 6.88 – 8.23  |
+| T3 | 10.5 | 7.11 | 6.85 – 11.46 |
+| T4 | 3.5  | 1.89 | 1.04 – 3.84  |
 
 
-## need to sort this out *******************************
-## JS-On vs JS-Off (T3 comparison)
-- JS-on (n=4): Median 567ms
-- JS-off (n=1, P3): 3456ms (full page reload)
-- **Difference**: ~6× slower without JS (expected)
 
